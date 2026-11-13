@@ -1,34 +1,61 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from pathlib import Path
 import pandas as pd
 import joblib
 
 
-# Load trained model
-model = joblib.load("credit_card_fraud_model.pkl")
+# =========================================================
+# PATHS
+# =========================================================
 
-# Create FastAPI app
+BASE_DIR = Path(__file__).resolve().parent
+
+MODEL_PATH = BASE_DIR / "credit_card_fraud_model.pkl"
+FRONTEND_DIR = BASE_DIR / "frontend"
+
+
+# =========================================================
+# LOAD TRAINED MODEL
+# =========================================================
+
+model = joblib.load(MODEL_PATH)
+
+
+# =========================================================
+# CREATE FASTAPI APP
+# =========================================================
+
 app = FastAPI(
     title="Credit Card Fraud Detection API",
     description="API for detecting fraudulent credit card transactions",
     version="1.0"
 )
 
-# Allow the frontend to call the API even if it is opened from a file or another port
+
+# =========================================================
+# CORS
+# =========================================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-# Input data
+# =========================================================
+# INPUT DATA MODEL
+# =========================================================
+
 class Transaction(BaseModel):
     Time: float
+
     V1: float
     V2: float
     V3: float
@@ -57,28 +84,31 @@ class Transaction(BaseModel):
     V26: float
     V27: float
     V28: float
+
     Amount: float
 
 
-@app.get("/")
-def home():
-    return {
-        "message": "Credit Card Fraud Detection API is running"
-    }
-
+# =========================================================
+# HEALTH CHECK
+# =========================================================
 
 @app.get("/health")
 def health():
     return {
         "status": "healthy",
-        "model": "Random Forest"
+        "model": "Random Forest",
+        "message": "Credit Card Fraud Detection API is running"
     }
 
+
+# =========================================================
+# PREDICTION API
+# =========================================================
 
 @app.post("/predict")
 def predict(transaction: Transaction):
 
-    # Convert input into dictionary
+    # Convert input to dictionary
     data = transaction.model_dump()
 
     # Convert dictionary to DataFrame
@@ -90,7 +120,7 @@ def predict(transaction: Transaction):
     # Get probability
     probability = model.predict_proba(input_data)[0][1]
 
-    # Result
+    # Convert prediction to result
     if prediction == 1:
         result = "Fraudulent Transaction"
     else:
@@ -103,7 +133,20 @@ def predict(transaction: Transaction):
     }
 
 
-# Serve the frontend at http://127.0.0.1:8000/ui  (keep this last, after the API routes)
-FRONTEND_DIR = Path(__file__).parent / "frontend"
+# =========================================================
+# SERVE FRONTEND
+# =========================================================
+
 if FRONTEND_DIR.exists():
-    app.mount("/ui", StaticFiles(directory=FRONTEND_DIR, html=True), name="ui")
+
+    # Serve frontend files directly from the root URL
+    # This must be AFTER all API routes.
+
+    app.mount(
+        "/",
+        StaticFiles(
+            directory=FRONTEND_DIR,
+            html=True
+        ),
+        name="frontend"
+    )
